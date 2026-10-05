@@ -1,6 +1,7 @@
 import { getDb } from "../../../../lib/mongo";
 import { ACTION_MAP } from "../../../../lib/newjob";
 import { isAuthed, requireUser } from "../../../../lib/gate";
+import { sendJson } from "../../../../lib/http";
 import { driveDoc, dropFiles, ensureFolder, makePublicReader, thumbUrl, uploadFile, viewUrl } from "../../../../lib/gdrive";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,12 @@ function thumbOf(s = {}) {
 // GET → toàn bộ tài nguyên (text + link) của 1 job để hiển thị chi tiết
 export async function GET(req, { params }) {
   const db = await getDb();
-  const j = await db.collection("jobs").findOne({ _id: params.id });
+  // events/config không hiển thị ở đây mà phình theo thời gian → khỏi kéo về.
+  const [j, machines] = await Promise.all([
+    db.collection("jobs").findOne({ _id: params.id }, { projection: { events: 0, config: 0 } }),
+    db.collection("machines").find({}, { projection: { name: 1, role: 1, last_heartbeat: 1 } }).toArray(),
+  ]);
   if (!j) return Response.json({ error: "not found" }, { status: 404 });
-  const machines = await db.collection("machines").find({}).toArray();
   const names = {};
   for (const m of machines) names[m._id] = m.name || m._id;
   const stages = {};
@@ -44,7 +48,8 @@ export async function GET(req, { params }) {
     }))
     .sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name));
   const tf = j.transfer || null;
-  return Response.json({
+  // gzip + ETag: khối thumbnail poll route này mỗi 8s lúc đang tạo ảnh.
+  return sendJson(req, {
     id: j._id, phase: j.overall_phase, waiting_on: j.waiting_on,
     next_action: j.next_action, desired: j.control?.desired,
     owner_id: pipeId, locals,

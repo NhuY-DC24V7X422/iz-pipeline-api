@@ -17,7 +17,10 @@ export async function GET(req) {
     return new Response(buf, {
       headers: {
         "Content-Type": r.headers.get("content-type") || "image/jpeg",
-        "Cache-Control": "public, max-age=86400, immutable",
+        // file Drive theo ID không bao giờ đổi nội dung → cho CDN (của BE lẫn của proxy FE,
+        // vì FE chép nguyên cache-control) giữ 1 năm: mở lại ảnh KHÔNG chạy function nữa.
+        // (Trước chỉ có max-age = cache trình duyệt; CDN Vercel chỉ giữ khi có s-maxage.)
+        "Cache-Control": "public, max-age=86400, s-maxage=31536000, immutable",
         "Access-Control-Allow-Origin": "*",
       },
     });

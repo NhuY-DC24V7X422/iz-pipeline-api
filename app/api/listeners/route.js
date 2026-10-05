@@ -1,11 +1,12 @@
 import { getDb } from "../../../lib/mongo";
 import { memo } from "../../../lib/cache";
+import { sendJson, serialize } from "../../../lib/http";
 
 export const dynamic = "force-dynamic";
 
 // CACHE 3s: poll dày; giảm tải Atlas M0.
-export async function GET() {
-  return Response.json(await memo("listeners", 3000, listenersPayload));
+export async function GET(req) {
+  return sendJson(req, await memo("listeners", 3000, async () => serialize(await listenersPayload())));
 }
 
 const INFLIGHT = ["uploaded_to_drive", "claimed_by_vps", "vps_downloading",

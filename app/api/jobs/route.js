@@ -1,6 +1,7 @@
 import { getDb } from "../../../lib/mongo";
 import { newJob } from "../../../lib/newjob";
 import { memo, invalidate } from "../../../lib/cache";
+import { sendJson, serialize } from "../../../lib/http";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -101,9 +102,11 @@ export async function GET(req) {
   const q = (sp.get("q") || "").trim();
   const limit = Math.min(MAX_LIMIT,
     Math.max(1, parseInt(sp.get("limit"), 10) || DEFAULT_LIMIT));
-  // CACHE 3s (bảng poll ~6s): giảm tải Atlas M0. Dữ liệu cũ tối đa 3s. Cache theo (scope,q,limit).
-  const payload = await memo(`jobs|${scope || ""}|${q}|${limit}`, 3000, () => jobsPayload({ scope, q, limit }));
-  return Response.json(payload);
+  // CACHE 3s (bảng poll ~15s): giảm tải Atlas M0. Dữ liệu cũ tối đa 3s. Cache theo (scope,q,limit).
+  // Cache luôn chuỗi JSON + ETag → web gửi If-None-Match, bảng không đổi thì 304 rỗng.
+  const payload = await memo(`jobs|${scope || ""}|${q}|${limit}`, 3000,
+    async () => serialize(await jobsPayload({ scope, q, limit })));
+  return sendJson(req, payload);
 }
 
 async function jobsPayload({ scope, q, limit }) {

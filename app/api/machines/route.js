@@ -1,12 +1,13 @@
 import { getDb } from "../../../lib/mongo";
 import { TTS_BUCKET_OF, TTS_BUCKETS } from "../../../lib/newjob";
 import { memo } from "../../../lib/cache";
+import { sendJson, serialize } from "../../../lib/http";
 
 export const dynamic = "force-dynamic";
 
 // CACHE 3s: bảng poll dày; giảm tải Atlas M0.
-export async function GET() {
-  return Response.json(await memo("machines", 3000, machinesPayload));
+export async function GET(req) {
+  return sendJson(req, await memo("machines", 3000, async () => serialize(await machinesPayload())));
 }
 
 async function machinesPayload() {

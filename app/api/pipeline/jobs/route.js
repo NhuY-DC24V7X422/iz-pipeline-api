@@ -50,9 +50,15 @@ export const POST = makeGroup({
     return rows;
   },
 
-  async jobs_for(db, { machine_id, only_run = true }) {
+  // hide_gone: bỏ task đã xoá / đã purge — bảng UI vốn ẩn chúng, gửi về chỉ tốn băng thông.
+  // (reaper KHÔNG dùng cờ này: nó cần thấy task 'deleted' để purge.)
+  async jobs_for(db, { machine_id, only_run = true, hide_gone = false }) {
     const flt = { owner_machine: machine_id };
     if (only_run) flt["control.desired"] = "run";
+    else if (hide_gone) {
+      flt["control.desired"] = { $ne: "deleted" };
+      flt["cleanup.status"] = { $ne: "purged" };
+    }
     return db.collection("jobs").find(flt, { projection: LIST_EXCLUDE }).toArray();
   },
 

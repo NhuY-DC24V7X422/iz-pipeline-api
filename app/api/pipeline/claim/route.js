@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // now/until tính SERVER-SIDE (đồng hồ BE) → mọi máy dùng chung 1 nguồn giờ, không lệch.
+const LIST_EXCLUDE = { events: 0, rewrite: 0, config: 0, metadata_options: 0 };
 const pushEvent = (ev) => ({ events: { $each: [ev], $slice: -EVENTS_CAP } });
 
 // Port trung thực từ core/repo.py — CLAIM ATOMIC (find_one_and_update). lease_seconds
@@ -47,7 +48,8 @@ export const POST = makeGroup({
   async jobs_for_stage(db, { lane, status, machine_id }) {
     const flt = { [`stages.${lane}.status`]: status, "control.desired": "run" };
     if (machine_id && lane === "tts") flt.tts_target = machine_id;
-    return db.collection("jobs").find(flt).toArray();
+    // listener chỉ đọc tts/_id → bỏ các field phình theo thời gian.
+    return db.collection("jobs").find(flt, { projection: LIST_EXCLUDE }).toArray();
   },
 
   async claim_tts(db, { machine_id, lease_seconds }) {

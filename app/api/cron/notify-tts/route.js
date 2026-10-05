@@ -17,6 +17,25 @@ const INFLIGHT = [RUNNING, WAITING, ...INCOMING, "tts_done", "audio_packing", "a
 const WAIT_REMIND_MIN = 3;
 const WAIT_REMIND_COOLDOWN_MS = 30 * 60 * 1000;
 
+const RUN_GAP_MS = 45 * 1000;
+
+// true = lượt này được quét (lượt trước đã cách ≥45s). Nguyên tử: 2 lượt song song thì 1
+// lượt khớp filter, lượt kia upsert đụng _id đã có → E11000 → không quét.
+async function claimRun() {
+  const now = new Date();
+  try {
+    const db = await getDb();
+    await db.collection("settings").updateOne(
+      { _id: "notify_state",
+        $or: [{ last_run: { $exists: false } }, { last_run: { $lte: new Date(now - RUN_GAP_MS) } }] },
+      { $set: { last_run: now } }, { upsert: true });
+    return true;
+  } catch (e) {
+    if (e?.code === 11000) return false;
+    return true;   // Atlas chập lúc claim → cứ quét như cũ (nhánh dưới tự nối lại Mongo)
+  }
+}
+
 // Cron heartbeat (Cloudflare Worker gọi mỗi phút). Mỗi task báo ĐÚNG 1 LẦN/loại nhờ cờ
 // notify.* claim nguyên tử; gửi lỗi thì nhả cờ để phút sau gửi lại.
 async function handle(req) {
@@ -29,6 +48,10 @@ async function handle(req) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
+
+  // GOM NHỊP: mọi máy operator + Cloudflare cron cùng gõ route này mỗi phút → N lượt quét
+  // ~15 truy vấn/phút. Chỉ lượt GIÀNH ĐƯỢC ô (nguyên tử) mới quét; còn lại về ngay.
+  if (!(await claimRun())) return NextResponse.json({ ok: true, skipped: "vừa chạy" });
 
   const tg = await getTelegramSettings();
   if (!tg.enabled || !tg.bot_token || !tg.chat_id) {
