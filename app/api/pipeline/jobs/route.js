@@ -11,6 +11,29 @@ function pushEvent(ev) {
   return { events: { $each: [ev], $slice: -EVENTS_CAP } };
 }
 
+function jobsForFilter({ machine_id, only_run = true, hide_gone = false }) {
+  const flt = { owner_machine: machine_id };
+  if (only_run) flt["control.desired"] = "run";
+  else if (hide_gone) {
+    flt["control.desired"] = { $ne: "deleted" };
+    flt["cleanup.status"] = { $ne: "purged" };
+  }
+  return flt;
+}
+
+// Mốc rẻ cho jobs_for (xem makeGroup): (số job, tổng mtime) tính TRONG Mongo, trả về vài
+// byte. Job sửa → mtime tăng → tổng đổi; job vào/ra bộ lọc hay bị xoá → số/tổng đổi.
+// mtime do lib/jobsMtime.js tự đóng dấu ở mọi lệnh ghi qua BE.
+const STAMPS = {
+  async jobs_for(db, args) {
+    const [r] = await db.collection("jobs").aggregate([
+      { $match: jobsForFilter(args) },
+      { $group: { _id: null, n: { $sum: 1 }, t: { $sum: { $toLong: { $ifNull: ["$mtime", 0] } } } } },
+    ]).toArray();
+    return r ? `${r.n}.${r.t}` : "0.0";
+  },
+};
+
 // Port trung thực từ core/repo.py — job lifecycle (không atomic-claim, xem nhóm claim).
 export const POST = makeGroup({
   async insert_job(db, { doc }) {
@@ -52,14 +75,8 @@ export const POST = makeGroup({
 
   // hide_gone: bỏ task đã xoá / đã purge — bảng UI vốn ẩn chúng, gửi về chỉ tốn băng thông.
   // (reaper KHÔNG dùng cờ này: nó cần thấy task 'deleted' để purge.)
-  async jobs_for(db, { machine_id, only_run = true, hide_gone = false }) {
-    const flt = { owner_machine: machine_id };
-    if (only_run) flt["control.desired"] = "run";
-    else if (hide_gone) {
-      flt["control.desired"] = { $ne: "deleted" };
-      flt["cleanup.status"] = { $ne: "purged" };
-    }
-    return db.collection("jobs").find(flt, { projection: LIST_EXCLUDE }).toArray();
+  async jobs_for(db, args) {
+    return db.collection("jobs").find(jobsForFilter(args), { projection: LIST_EXCLUDE }).toArray();
   },
 
   async delete_job(db, { job_id }) {
@@ -121,4 +138,4 @@ export const POST = makeGroup({
     );
     return r.modifiedCount;
   },
-});
+}, STAMPS);
