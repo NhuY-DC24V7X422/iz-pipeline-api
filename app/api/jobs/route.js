@@ -68,6 +68,9 @@ function mapJob(j, names) {
 const DEFAULT_LIMIT = 300;
 const MAX_LIMIT = 3000;
 const rx = (s) => new RegExp(String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+// Link Drive dán vào có thể khác dạng link đã lưu (/view?usp=sharing, open?id=…,
+// uc?id=…) → rút file ID ra để so, khớp mọi biến thể của cùng 1 file.
+const driveId = (s) => String(s).match(/(?:\/d\/|[?&]id=)([\w-]{10,})/)?.[1] || null;
 
 // CHỈ field bảng dùng tới. Trước đây dùng $project loại trừ (events/rewrite/config/
 // metadata_options) — vẫn tha về stages đầy đủ (lease, error, trace), artifacts,
@@ -118,11 +121,13 @@ async function jobsPayload({ scope, q, limit }) {
       "control.desired": { $ne: "deleted" },
     };
   // Tìm kiếm chạy TRÊN ATLAS (không phải lọc trong trình duyệt) để job cũ nằm ngoài
-  // trần vẫn tra được: link · tiêu đề · ghi chú · #id.
+  // trần vẫn tra được: link · tiêu đề · ghi chú · #id · link Drive video.
+  const did = q ? driveId(q) : null;
   const match = q
     ? { $and: [activeFilter, { $or: [
         { _id: rx(q) }, { "source.url": rx(q) },
         { "source.title_original": rx(q) }, { note: rx(q) },
+        { "final.video_link": rx(did || q) }, { "tts.drive_in_link": rx(did || q) },
       ] }] }
     : activeFilter;
 
